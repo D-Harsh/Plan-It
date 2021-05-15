@@ -10,12 +10,11 @@ import UIKit
 class ListViewController: UITableViewController {
     
     var items = [Item]()
-    let filePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
+    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        getItemsFromPlist()
+        print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
         
     }
     
@@ -29,13 +28,15 @@ class ListViewController: UITableViewController {
         let item = items[indexPath.row]
         cell.textLabel!.text = item.task
         cell.accessoryType = item.isDone ? .checkmark : .none
+        cell.backgroundColor = item.isDone ? #colorLiteral(red: 0.607858181, green: 0.1098126695, blue: 0.1215828434, alpha: 1) : .white
+        cell.textLabel?.textColor = item.isDone ? .white : .black
         return cell
     }
     
     // MARK: - TableView Delegate Methods
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         items[indexPath.row].isDone = !items[indexPath.row].isDone
-        self.saveItemsToPlist()
+        self.saveItems()
         tableView.reloadData()
         tableView.deselectRow(at: indexPath, animated: true)
         
@@ -48,11 +49,12 @@ class ListViewController: UITableViewController {
         let alert = UIAlertController(title: "Add new item", message: "", preferredStyle: .alert)
         let action = UIAlertAction(title: "Add", style: .default) { (action) in
             if let safeTask = textField.text {
-                let newItem = Item()
-                newItem.task = safeTask
-                self.items.append(newItem)
                 
-                self.saveItemsToPlist()
+                let newItem = Item(context: self.context)
+                newItem.task = safeTask
+                newItem.isDone = false
+                self.items.append(newItem)
+                self.saveItems()
                 
                 self.tableView.reloadData()
             }
@@ -66,27 +68,14 @@ class ListViewController: UITableViewController {
     }
     
     
-    func saveItemsToPlist(){
+    func saveItems(){
         let encoder = PropertyListEncoder()
         do {
-            let data = try encoder.encode(items)
-            try data.write(to: filePath!)
+            try context.save()
         } catch {
-            print("\(error.localizedDescription)")
+            print(error.localizedDescription)
         }
     }
     
-    func getItemsFromPlist(){
-        if let data = try? Data(contentsOf: filePath!) {
-            let decoder = PropertyListDecoder()
-            do {
-            items = try decoder.decode([Item].self, from: data)
-            }
-            catch {
-                print("\(error.localizedDescription)")
-            }
-        }
-        
-        
-    }
+    
 }
