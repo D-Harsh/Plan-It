@@ -6,16 +6,20 @@
 //
 
 import UIKit
+import CoreData
 
 class ListViewController: UITableViewController {
-    
+    var selectedCategory: CategoryCakes? {
+        didSet {
+            loadItems()
+        }
+    }
     var items = [Item]()
     let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
     
     override func viewDidLoad() {
         super.viewDidLoad()
         print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
-        
     }
     
     // MARK: - TableView DataSource Methods
@@ -42,7 +46,7 @@ class ListViewController: UITableViewController {
         
     }
     
-    // MARK: - New Items
+    // MARK: - Data Management Section
     
     @IBAction func addItem(_ sender: UIBarButtonItem) {
         var textField = UITextField()
@@ -53,6 +57,7 @@ class ListViewController: UITableViewController {
                 let newItem = Item(context: self.context)
                 newItem.task = safeTask
                 newItem.isDone = false
+                newItem.parentCategory = self.selectedCategory
                 self.items.append(newItem)
                 self.saveItems()
                 
@@ -69,7 +74,6 @@ class ListViewController: UITableViewController {
     
     
     func saveItems(){
-        let encoder = PropertyListEncoder()
         do {
             try context.save()
         } catch {
@@ -78,4 +82,45 @@ class ListViewController: UITableViewController {
     }
     
     
+    func loadItems(from request: NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil){
+        //Specification of entity is required
+        let catPredicate = NSPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
+        let compoundPredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [catPredicate ,predicate ?? catPredicate])
+        
+        request.predicate = compoundPredicate
+        do {
+            // Save entries in an item array
+            items = try context.fetch(request)
+        } catch {
+            print(error.localizedDescription)
+        }
+        tableView.reloadData()
+    }
+    
+    func delete(row: Int) {
+        context.delete(items[row])
+        items.remove(at: row)
+        self.saveItems()
+    }
+    
+}
+
+// MARK: - Search Bar Delegate Methods
+
+extension ListViewController: UISearchBarDelegate {
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        let request: NSFetchRequest<Item> = Item.fetchRequest()
+        let predicate = NSPredicate(format: "task CONTAINS[cd] %@", searchBar.text!)
+        request.sortDescriptors = [ NSSortDescriptor(key: "task", ascending: true)]
+        loadItems(from: request, predicate: predicate)
+    }
+    
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        if searchBar.text?.count == 0 {
+            loadItems()
+            DispatchQueue.main.async {
+                searchBar.resignFirstResponder()
+            }
+        }
+    }
 }
