@@ -6,41 +6,50 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
 
-class ListViewController: UITableViewController {
-    var selectedCategory: CategoryCakes? {
+class ListViewController: SwipeTableViewController {
+    var selectedCategory: Category? {
         didSet {
             loadItems()
         }
     }
-    var items = [Item]()
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+    var taskItems: Results<Item>?
+    let realm = try! Realm()
+    
     
     override func viewDidLoad() {
         super.viewDidLoad()
         print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
+        tableView.rowHeight = 60
     }
     
     // MARK: - TableView DataSource Methods
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return items.count
+        return taskItems?.count ?? 1
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "itemCell", for: indexPath)
-        let item = items[indexPath.row]
-        cell.textLabel!.text = item.task
-        cell.accessoryType = item.isDone ? .checkmark : .none
-        cell.backgroundColor = item.isDone ? #colorLiteral(red: 0.607858181, green: 0.1098126695, blue: 0.1215828434, alpha: 1) : .white
-        cell.textLabel?.textColor = item.isDone ? .white : .black
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
+        let item = taskItems?[indexPath.row]
+        cell.textLabel!.text = item?.task
+        cell.accessoryType = item?.isDone ?? false ? .checkmark : .none
+        cell.backgroundColor = item?.isDone ?? false ? #colorLiteral(red: 0.607858181, green: 0.1098126695, blue: 0.1215828434, alpha: 1) : .white
+        cell.textLabel?.textColor = item?.isDone ?? false ? .white : .black
         return cell
     }
     
     // MARK: - TableView Delegate Methods
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        items[indexPath.row].isDone = !items[indexPath.row].isDone
-        self.saveItems()
+        if let item = taskItems?[indexPath.row] {
+            do {
+                try realm.write{
+                    item.isDone = !item.isDone
+                }
+            }catch {
+                print(error.localizedDescription)
+            }
+        }
         tableView.reloadData()
         tableView.deselectRow(at: indexPath, animated: true)
         
@@ -52,15 +61,20 @@ class ListViewController: UITableViewController {
         var textField = UITextField()
         let alert = UIAlertController(title: "Add new item", message: "", preferredStyle: .alert)
         let action = UIAlertAction(title: "Add", style: .default) { (action) in
-            if let safeTask = textField.text {
+            if let safeTask = textField.text, let currCategory = self.selectedCategory {
                 
-                let newItem = Item(context: self.context)
+                let newItem = Item()
                 newItem.task = safeTask
                 newItem.isDone = false
-                newItem.parentCategory = self.selectedCategory
-                self.items.append(newItem)
-                self.saveItems()
-                
+                newItem.dateCreated = Date()
+                do {
+                    try self.realm.write{
+                        currCategory.items.append(newItem)
+                        self.realm.add(newItem)
+                    }
+                } catch {
+                    print("Here:\(error.localizedDescription)")
+                }
                 self.tableView.reloadData()
             }
         }
@@ -73,34 +87,26 @@ class ListViewController: UITableViewController {
     }
     
     
-    func saveItems(){
-        do {
-            try context.save()
-        } catch {
-            print(error.localizedDescription)
-        }
-    }
     
     
-    func loadItems(from request: NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil){
+    func loadItems(){
         //Specification of entity is required
-        let catPredicate = NSPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
-        let compoundPredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [catPredicate ,predicate ?? catPredicate])
-        
-        request.predicate = compoundPredicate
-        do {
-            // Save entries in an item array
-            items = try context.fetch(request)
-        } catch {
-            print(error.localizedDescription)
-        }
-        tableView.reloadData()
+        taskItems = selectedCategory?.items.sorted(byKeyPath: "isDone", ascending: true)
+//        tableView.reloadData()
+        UIView.transition(with: tableView, duration: 0.35, options: .transitionCrossDissolve, animations: {self.tableView.reloadData()}, completion: nil)
     }
     
-    func delete(row: Int) {
-        context.delete(items[row])
-        items.remove(at: row)
-        self.saveItems()
+    
+    override func updateModel(at indexPath: IndexPath) {
+        if let deletionItem = self.taskItems?[indexPath.row] {
+            do {
+                try realm.write{
+                    realm.delete(deletionItem)
+                }
+            } catch {
+                print(error.localizedDescription)
+            }
+        }
     }
     
 }
@@ -109,12 +115,11 @@ class ListViewController: UITableViewController {
 
 extension ListViewController: UISearchBarDelegate {
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
-        let request: NSFetchRequest<Item> = Item.fetchRequest()
         let predicate = NSPredicate(format: "task CONTAINS[cd] %@", searchBar.text!)
-        request.sortDescriptors = [ NSSortDescriptor(key: "task", ascending: true)]
-        loadItems(from: request, predicate: predicate)
+        taskItems = taskItems?.filter(predicate).sorted(byKeyPath: "dateCreated", ascending: true)
+        tableView.reloadData()
     }
-    
+
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
         if searchBar.text?.count == 0 {
             loadItems()
@@ -123,4 +128,6 @@ extension ListViewController: UISearchBarDelegate {
             }
         }
     }
+    
+    
 }

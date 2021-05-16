@@ -6,29 +6,31 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
 
-class CategoryViewController: UITableViewController {
+class CategoryViewController: SwipeTableViewController {
     
-    var categories = [CategoryCakes]()
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+    
+    let realm = try! Realm()
+    var categories: Results<Category>?
     
     override func viewDidLoad() {
         super.viewDidLoad()
         loadItems()
+        tableView.rowHeight = 80
     }
-
+    
     // MARK: - Table view data source
-
+    
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return categories.count
+        return categories?.count ?? 1
     }
-
+    
+    
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath)
-        let category = categories[indexPath.row]
-        cell.textLabel!.text = category.name
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
+        cell.textLabel?.text = categories?[indexPath.row].name ?? "Categories haven't been added yet"
         return cell
     }
     // MARK: - TableView delegate methods
@@ -41,7 +43,7 @@ class CategoryViewController: UITableViewController {
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
         let destVC = segue.destination as! ListViewController
         if let indexPath = tableView.indexPathForSelectedRow {
-            destVC.selectedCategory = categories[indexPath.row]
+            destVC.selectedCategory = categories?[indexPath.row]
         }
         
     }
@@ -52,11 +54,9 @@ class CategoryViewController: UITableViewController {
         let alert = UIAlertController(title: "Add new category", message: "", preferredStyle: .alert)
         let action = UIAlertAction(title: "Add", style: .default) { (action) in
             if let safeCategory = textField.text {
-                let newCategory = CategoryCakes(context: self.context)
+                let newCategory = Category()
                 newCategory.name = safeCategory
-                self.categories.append(newCategory)
-                self.saveItems()
-                
+                self.saveItems(newCategory)
                 self.tableView.reloadData()
             }
         }
@@ -68,31 +68,37 @@ class CategoryViewController: UITableViewController {
         present(alert, animated: true, completion: nil)
     }
     
-
     
-    func saveItems(){
+    
+    func saveItems(_ category: Category){
+        //appending happens here
         do {
-            try context.save()
+            try realm.write({
+                realm.add(category)
+            })
         } catch {
             print(error.localizedDescription)
         }
     }
     
     
-    func loadItems(from request: NSFetchRequest<CategoryCakes> = CategoryCakes.fetchRequest()){
-        //Specification of entity is required
-        do {
-            // Save entries in an item array
-            categories = try context.fetch(request)
-        } catch {
-            print(error.localizedDescription)
-        }
+    func loadItems(){
+        categories = realm.objects(Category.self)
         tableView.reloadData()
     }
     
-    func delete(row: Int) {
-        context.delete(categories[row])
-        categories.remove(at: row)
-        self.saveItems()
+    
+    override func updateModel(at indexPath: IndexPath) {
+        if let deletionCategory = self.categories?[indexPath.row] {
+            do {
+                try realm.write{
+                    realm.delete(deletionCategory)
+                }
+            } catch {
+                print(error.localizedDescription)
+            }
+        }
     }
 }
+
+
